@@ -7,7 +7,7 @@
   "background_color": "#ffffff",
   "icons": [
     {
-      "src": "192_icon.png",
+      "src": "https://ponglai-git.github.io/busList/192_icon.png",
       "sizes": "192x192",
       "type": "image/png"
     }
