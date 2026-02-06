@@ -1,7 +1,7 @@
 {
-  "name": 毛毛豬巴士查詢",
   "short_name": "毛毛查巴士",
-  "start_url": ".",
+  "name": "毛毛豬巴士查詢",
+  "start_url": "https://ponglai-git.github.io/busList/bus_v3.html",
   "display": "standalone",
   "theme_color": "#41009b",
   "background_color": "#ffffff",
