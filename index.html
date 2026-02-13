@@ -41,7 +41,6 @@
 			<option value="CTB">城巴</option>
 			<!--<option value="NWFB">新巴</option>-->
 			</select>
-			<span class="select-icon">▼</span>
 		</div>
 		</div>
 
@@ -52,7 +51,6 @@
             <option value="inbound">往程</option>
             <option value="outbound">回程</option>
           </select>
-          <span class="select-icon">▼</span>
         </div>
       </div>
     </div>
@@ -987,12 +985,24 @@ body {
   .search-box {
     padding: 15px;
   }
-  
+  .input-group {
+    margin-bottom: 10px;
+    width: 48%;
+}
+  .input-group:first-child {
+	width: 100%;
+  }
   .input-wrapper input, .select-wrapper select {
     font-size: 18px;
-    padding: 14px 45px 14px 15px;
+    padding: 14px 25px 14px 15px;
   }
-  
+  .input-icon, .select-icon {
+	right: 5px;
+  }
+  .search-box .input {
+    flex-wrap: wrap;
+    gap: 0 4%;
+}
   .route-header {
     gap: 15px;
     text-align: center;
@@ -1019,6 +1029,9 @@ body {
   
   .eta-time {
     width: 50%;
+  }
+  .route-stats , .route-direction{
+    font-size: 12px;
   }
 }
 </style>  
