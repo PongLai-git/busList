@@ -150,7 +150,7 @@
                 <div class="stop-sequence">${index + 1}</div>
                 <div class="stop-info">
                   <h3 class="stop-name">${info.name_tc}</h3>
-                  <div class="stop-id">站號: ${stop.stop}</div>
+                  <div class="stop-id">站號: ${stop.stop} ( ${info.lat}, ${info.long} )</div>
                 </div>
                 <button class="eta-btn" onclick="getETA('${stop.stop}','${route}', '${stop.bound}', this)">
                   <span class="eta-btn-text">到站時間</span>
@@ -164,6 +164,59 @@
 
         output += `</div>`;
         resultDiv.innerHTML = output;
+
+
+	// 嘗試自動定位並跳轉到最近車站
+if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition((pos) => {
+        const userLat = pos.coords.latitude;
+        const userLng = pos.coords.longitude;
+
+        let minDist = Infinity;
+        let nearestStopId = null;
+        let nearestButton = null;
+
+        // 直接使用已經抓好的 stopsData，不用再 fetch
+        stopsData.forEach((stopInfo, index) => {
+            const stop = data.data[index];
+            const lat = parseFloat(stopInfo.data.lat);
+            const lng = parseFloat(stopInfo.data.long);  // 注意這裡是 long 不是 lng
+            
+            if (isNaN(lat) || isNaN(lng)) return;
+
+            // Haversine 公式
+            const R = 6371e3;
+            const φ1 = userLat * Math.PI / 180;
+            const φ2 = lat * Math.PI / 180;
+            const Δφ = (lat - userLat) * Math.PI / 180;
+            const Δλ = (lng - userLng) * Math.PI / 180;
+
+            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const d = R * c;
+
+            if (d < minDist) {
+                minDist = d;
+                nearestStopId = stop.stop;
+                nearestButton = document.querySelector(`button[onclick*="'${stop.stop}'"]`);
+            }
+        });
+
+        
+        console.log(`最近的站點是 ${nearestStopId}，距離約 ${Math.round(minDist)} 米`);
+        // 小於 250 米才跳轉
+        if (minDist <= 300 && nearestButton) {
+            nearestButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			const type = bound === 'inbound' ? 'I' : 'O';
+            getETA(nearestStopId, route, type, nearestButton);
+        }
+    }, () => {
+        // 定位失敗，不做事
+        console.log('定位失敗或用戶拒絕');
+    });
+}
 
       } catch (error) {
         resultDiv.innerHTML = `
@@ -179,6 +232,7 @@
     }
 
     async function getETA(stopId, route, type, button) {
+		console.log("ETA",stopId, route, type, button)
       const etaDiv = document.getElementById(`eta-${stopId}`);
       
       // 防止重複點擊
@@ -278,6 +332,68 @@
         getStops();
       }
     });
+
+// 在現有 script 中加入這幾行就夠了
+document.addEventListener('DOMContentLoaded', function() {
+    // 常用路線列表（精簡版）
+
+    const commonRoutes = [
+  // 市區路線 (1–99)
+  '1', '1A', '2', '2A', '2B', '2D', '2E', '2F', '3B', '3C', '3D', '3M', '3X',
+  '5', '5A', '5C', '5D', '5M', '6', '6C', '6D', '6F', '7', '7B', '7M', '8',
+  '9', '10', '11', '12', '13X', '14', '15', '16', '17', '18', '21', '23',
+  '24', '26', '27', '28', '29M', '31', '32', '33', '34', '35', '36', '37',
+  '38', '39M', '40', '41', '42', '43', '44', '45', '46', '47X', '48X', '49X',
+  '52X', '53', '54', '55', '56', '57M', '58M', '59M', '60M', '61M', '62X',
+  '63X', '64K', '65K', '66M', '67M', '68X', '69M', '70K', '71K', '72', '73',
+  '74X', '75K', '76K', '77K', '78', '79K', '80K', '81', '82K', '83K', '84M',
+  '85', '86', '87', '88', '89', '90', '91', '92', '93', '94', '95', '96',
+  '97', '98', '99',
+
+  // 新界路線 (100–199)
+  '101', '102', '103', '104', '106', '107', '108', '109', '110', '111', '112',
+  '113', '116', '117', '118', '170', '171', '182',
+
+  // 200 系列
+  '234', '234X', '278X',
+
+  // 600 系列
+  '601', '603', '606', '608', '613', '619', '621', '641', '671', '673',
+  '680', '681', '682', '690', '694',
+
+  // 900 系列
+  '904', '905', '914', '948', '960', '961', '962', '968', '969', '978',
+
+  // 機場快線 A 系列
+  'A31', 'A32', 'A33', 'A34', 'A36', 'A37', 'A41', 'A43', 'A47X',
+
+  // 機場特快 E 系列
+  'E31', 'E32', 'E33', 'E34', 'E41', 'E42',
+
+  // 通宵路線 N 系列
+  'N216', 'N241', 'N260', 'N269', 'N281', 'N293', 'N296', 'N368', 'N373',
+  'N680', 'N691', 'N968', 'N969'
+];
+    
+    // 創建 datalist
+    let datalist = document.getElementById('busRoutes');
+    if (!datalist) {
+        datalist = document.createElement('datalist');
+        datalist.id = 'busRoutes';
+        document.body.appendChild(datalist);
+        
+        // 加入選項
+        commonRoutes.forEach(route => {
+            let option = document.createElement('option');
+            option.value = route;
+            datalist.appendChild(option);
+        });
+        
+        // 綁定到輸入框
+        const routeInput = document.getElementById('routeInput');
+        routeInput.setAttribute('list', 'busRoutes');
+    }
+});
 </script>
 
 <style>
@@ -528,13 +644,15 @@ body {
   font-weight: 800;
   color: #41009b;
   background: white;
-  width: 70px;
+  min-width: 70px;
   height: 70px;
   line-height: 70px;
   text-align: center;
   border-radius: 50%;
   box-shadow: 0 4px 15px rgba(65, 0, 155, 0.2);
   border: 3px solid #41009b;
+    padding: 0 10px;
+    box-sizing: border-box;
 }
 
 .route-direction {
