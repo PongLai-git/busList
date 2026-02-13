@@ -165,12 +165,15 @@
         output += `</div>`;
         resultDiv.innerHTML = output;
 
-
-	// 嘗試自動定位並跳轉到最近車站
 if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition((pos) => {
+    // 定義定位成功的處理函數
+    const handlePosition = (pos) => {
         const userLat = pos.coords.latitude;
         const userLng = pos.coords.longitude;
+        
+        // 快取這次的位置供下次使用
+        cachedUserLat = userLat;
+        cachedUserLng = userLng;
 
         let minDist = Infinity;
         let nearestStopId = null;
@@ -203,20 +206,32 @@ if (navigator.geolocation) {
                 nearestButton = document.querySelector(`button[onclick*="'${stop.stop}'"]`);
             }
         });
-
-        
         console.log(`最近的站點是 ${nearestStopId}，距離約 ${Math.round(minDist)} 米`);
-        // 小於 250 米才跳轉
         if (minDist <= 300 && nearestButton) {
             nearestButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
-			const type = bound === 'inbound' ? 'I' : 'O';
+            const type = bound === 'inbound' ? 'I' : 'O';
             getETA(nearestStopId, route, type, nearestButton);
         }
-    }, () => {
-        // 定位失敗，不做事
-        console.log('定位失敗或用戶拒絕');
-    });
+    };
+
+    // 如果有快取位置，立即使用
+    if (cachedUserLat && cachedUserLng) {
+        console.log('使用快取位置');
+        handlePosition({
+            coords: {
+                latitude: cachedUserLat,
+                longitude: cachedUserLng
+            }
+        });
+    } else {
+        // 沒有快取，重新定位（但這次會很快，因為 GPS 已 warm up）
+        console.log('重新獲取位置');
+        navigator.geolocation.getCurrentPosition(handlePosition, () => {
+            console.log('定位失敗或用戶拒絕');
+        });
+    }
 }
+
 
       } catch (error) {
         resultDiv.innerHTML = `
@@ -394,6 +409,20 @@ document.addEventListener('DOMContentLoaded', function() {
         routeInput.setAttribute('list', 'busRoutes');
     }
 });
+
+let cachedUserLat = null;
+let cachedUserLng = null;
+
+// 頁面載入時就開始定位
+if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition((pos) => {
+        cachedUserLat = pos.coords.latitude;
+        cachedUserLng = pos.coords.longitude;
+        console.log('✅ 已預先載入位置:', cachedUserLat, cachedUserLng);
+    }, (error) => {
+        console.log('預先定位失敗，將在查詢時重新嘗試');
+    });
+}
 </script>
 
 <style>
