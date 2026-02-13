@@ -2,181 +2,1024 @@
 <html lang="zh-HK">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=640, user-scalable=no">
-  <title>KMB 巴士到站查詢</title>
+  <meta name="theme-color" content="#41009b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="毛毛查巴士">
+  <link rel="manifest" href="https://ponglai-git.github.io/busList/manifest.json">
+  <link rel="icon" href="https://ponglai-git.github.io/busList/192_icon.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="https://ponglai-git.github.io/busList/192_icon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>毛毛豬巴士到站查詢系統</title>
 </head>
 <body>
 
 <div class="main">
-  <h2>KMB 巴士到站查詢</h2>
-  <div class="filter">
-	<label>輸入路線號：</label>
-	<input type="text" id="routeInput" placeholder="例如 76K" value="76K">
-	<select id="bound">
-		<option value="inbound">往程</option>
-		<option value="outbound">回程</option>
-	</select>
-	<button onclick="getStops()">查詢</button>
+  <!-- 頂部標題區域 -->
+  <div class="header">
+    <p class="top_icon"><img src="icon.png"></p>
+    <h1>實時巴士到站查詢</h1>
+    <div class="subtitle">毛毛豬巴士到站查詢系統</div>
   </div>
 
-  <div id="result" class="result"></div>
-</div>
-  <script>
-    let stopMap = {}; // 快取站點資料
+  <!-- 查詢區域 -->
+  <div class="search-container">
+    <div class="search-box">
+      <div class="input">
+      <div class="input-group">
+        <label for="routeInput">路線號碼</label>
+        <div class="input-wrapper">
+          <input type="text" id="routeInput" placeholder="例如: 76K" value="">
+          <span class="input-icon">🚌</span>
+        </div>
+      </div>
+	  <div class="input-group">
+		<label for="company">巴士公司</label>
+		<div class="select-wrapper">
+			<select id="company" onchange="changeCompany()">
+			<option value="kmb">九巴</option>
+			<option value="CTB">城巴</option>
+			<!--<option value="NWFB">新巴</option>-->
+			</select>
+			<span class="select-icon">▼</span>
+		</div>
+		</div>
 
+      <div class="input-group">
+        <label for="bound">方向</label>
+        <div class="select-wrapper">
+          <select id="bound">
+            <option value="inbound">往程</option>
+            <option value="outbound">回程</option>
+          </select>
+          <span class="select-icon">▼</span>
+        </div>
+      </div>
+    </div>
+
+      <button class="search-btn" onclick="getStops()">
+        <span class="btn-icon">🔍</span>
+        <span class="btn-text">查詢路線</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 結果區域 -->
+  <div id="result" class="result-container">
+    <div class="empty-state">
+      <div class="empty-icon">📍</div>
+      <p>輸入路線號碼查詢巴士站點</p>
+    </div>
+  </div>
+
+  <!-- 頁腳 -->
+  <div class="footer">
+    <p>Copyright © 2026 PongLai. All rights reserved.</p>
+    <p class="update-time">最後更新時間: <span id="updateTime">--:--</span></p>
+  </div>
+</div>
+
+<script>
+    let stopMap = {};
+    let currentRoute = '';
+    let currentBound = '';
+	let company = 'kmb';
+
+    // 更新時間顯示
+    function updateTime() {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('zh-HK', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: false 
+        });
+        document.getElementById('updateTime').textContent = timeStr;
+    }
+
+    // 每分鐘更新一次時間
+    setInterval(updateTime, 60000);
+    updateTime();
+
+	function changeCompany() {
+  	  company = document.getElementById("company").value; 
+	  console.log("切換公司:", company);
+	  loadAutoInput();
+	}
     async function getStops() {
       const route = document.getElementById("routeInput").value.trim().toUpperCase();
       const bound = document.getElementById("bound").value;
+  	  company = document.getElementById("company").value; 
       const resultDiv = document.getElementById("result");
-      resultDiv.innerHTML = "載入中...";
+      
+      // 儲存當前查詢
+      currentRoute = route;
+      currentBound = bound;
+
+      // 顯示載入狀態
+      resultDiv.innerHTML = `
+        <div class="loading-state">
+          <div class="loading-spinner"></div>
+      		<p>正在查詢 ${company === 'kmb' ? '九巴' : '城巴'} ${route} 路線...</p>
+        </div>
+      `;
 
       try {
-        // 取得路線所有分站
-        const response = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}/${bound}/1`);
-        const data = await response.json();
+    let routeStopsUrl, stopUrl;
+    
+    // 根據公司選擇 API
+    if (company === 'kmb') {
+      routeStopsUrl = `https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}/${bound}/1`;
+      stopUrl = (stopId) => `https://data.etabus.gov.hk/v1/transport/kmb/stop/${stopId}`;
+    } else {
+      // 城巴/新巴 API
+      routeStopsUrl = `https://rt.data.gov.hk/v1/transport/citybus-nwfb/route-stop/${company}/${route}/${bound}`;
+      stopUrl = (stopId) => `https://rt.data.gov.hk/v1/transport/citybus-nwfb/stop/${stopId}`;
+    }
 
-        if (!data.data || data.data.length === 0) {
-          resultDiv.innerHTML = "找不到此路線。";
+    // 取得路線所有分站
+    const response = await fetch(routeStopsUrl);
+    const data = await response.json();
+
+    // 城巴/新巴的回應格式不同
+    const stops = company === 'kmb' ? data.data : data.data;
+
+      if (!stops || stops.length === 0) {
+          resultDiv.innerHTML = `
+            <div class="error-state">
+              <div class="error-icon">❌</div>
+              <h3>找不到此路線</h3>
+              <p>請確認路線號碼及方向是否正確</p>
+              <button class="retry-btn" onclick="getStops()">重新查詢</button>
+            </div>
+          `;
           return;
         }
 
-        // 先一次性下載所有站點清單
-        let output = `<h3>路線 ${route} (${bound}) 分站：</h3>`;
-        
-		for (const stop of data.data) {
-          // 查站點名稱
-          const stopInfo = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop/${stop.stop}`);
-          const stopData = await stopInfo.json();
-          const info = stopData.data;
-		  const type = stop.bound;
-          output += `
-            <div class="item">
-				<div>	
-              <strong>${info.name_tc}</strong>
-              <button onclick="getETA('${stop.stop}','${route}', '${type}')">查看</button>
-			  	</div>
-              <p id="eta-${stop.stop}"></p>
-            </div>`;
-        };
+           // 取得所有站點名稱（並行請求）
+    const stopsPromises = stops.map(async (stop) => {
+      const stopInfo = await fetch(stopUrl(stop.stop));
+      return await stopInfo.json();
+    });
 
-        resultDiv.innerHTML = output;
+        const stopsData = await Promise.all(stopsPromises);
+
+        // 構建結果
+        let output = `
+          <div class="route-header">
+            <div class="route-info">
+              <span class="route-number">${route}</span>
+              <span class="route-direction">${bound === 'inbound' ? '往程' : '回程'}
+				${company === 'kmb' ? '九巴' : '城巴'}
+				</span>
+            </div>
+            <div class="route-stats">共 ${data.data.length} 個站點</div>
+          </div>
+          <div class="stops-list">
+        `;
+        
+       stops.forEach((stop, index) => {
+      const info = company === 'kmb' ? stopsData[index].data : stopsData[index].data;
+      output += `
+        <div class="stop-item">
+          <div class="stop-header">
+            <div class="stop-sequence">${index + 1}</div>
+            <div class="stop-info">
+              <h3 class="stop-name">${info.name_tc}</h3>
+              <div class="stop-id">站號: ${stop.stop}</div>
+            </div>
+            <button class="eta-btn" onclick="getETA('${stop.stop}','${route}', '${bound === 'inbound' ? 'I' : 'O'}', '${company}', this)">
+              <span class="eta-btn-text">到站時間</span>
+              <span class="eta-btn-icon">⏱️</span>
+            </button>
+          </div>
+          <div class="eta-display" id="eta-${stop.stop}"></div>
+        </div>
+      `;
+    });
+
+    output += `</div>`;
+    resultDiv.innerHTML = output;
+
+if (navigator.geolocation) {
+    const handlePosition = (pos) => {
+        const userLat = pos.coords.latitude;
+        const userLng = pos.coords.longitude;
+        
+        cachedUserLat = userLat;
+        cachedUserLng = userLng;
+
+        let minDist = Infinity;
+        let nearestStopId = null;
+        let nearestButton = null;
+
+        stopsData.forEach((stopInfo, index) => {
+            const stop = stops[index];
+            const lat = parseFloat(company === 'kmb' ? stopInfo.data.lat : stopInfo.lat);
+            const lng = parseFloat(company === 'kmb' ? stopInfo.data.long : stopInfo.long);
+            
+            if (isNaN(lat) || isNaN(lng)) return;
+
+            // Haversine 公式
+            const R = 6371e3;
+            const φ1 = userLat * Math.PI / 180;
+            const φ2 = lat * Math.PI / 180;
+            const Δφ = (lat - userLat) * Math.PI / 180;
+            const Δλ = (lng - userLng) * Math.PI / 180;
+
+            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const d = R * c;
+
+            if (d < minDist) {
+                minDist = d;
+                nearestStopId = stop.stop;
+                nearestButton = document.querySelector(`button[onclick*="'${stop.stop}'"]`);
+            }
+        });
+
+        console.log(`最近的站點是 ${nearestStopId}，距離約 ${Math.round(minDist)} 米`);
+        
+        if (minDist <= 300 && nearestButton) {
+            nearestButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const type = bound === 'inbound' ? 'I' : 'O';
+            getETA(nearestStopId, route, type, company, nearestButton);
+        }
+    };
+
+    if (cachedUserLat && cachedUserLng) {
+        handlePosition({
+            coords: {
+                latitude: cachedUserLat,
+                longitude: cachedUserLng
+            }
+        });
+    } else {
+        navigator.geolocation.getCurrentPosition(handlePosition, () => {
+            console.log('定位失敗或用戶拒絕');
+        });
+    }
+}
+
+
       } catch (error) {
-        resultDiv.innerHTML = "查詢失敗，請稍後再試。";
+        resultDiv.innerHTML = `
+          <div class="error-state">
+            <div class="error-icon">⚠️</div>
+            <h3>查詢失敗</h3>
+            <p>請檢查網絡連接後再試</p>
+            <button class="retry-btn" onclick="getStops()">重試</button>
+          </div>
+        `;
         console.error(error);
       }
     }
 
-    async function getETA(stopId, route, type) {
-      const etaSpan = document.getElementById(`eta-${stopId}`);
-      etaSpan.innerHTML = "載入中...";
+    async function getETA(stopId, route, type, company, button) {
+		console.log("ETA",stopId, route, type, button)
+      const etaDiv = document.getElementById(`eta-${stopId}`);
+      
+      // 防止重複點擊
+      if (button.classList.contains('loading')) return;
+      
+      button.classList.add('loading');
+      etaDiv.innerHTML = `
+        <div class="eta-loading">
+          <div class="loading-dots">
+            <span></span><span></span><span></span>
+          </div>
+          查詢中...
+        </div>
+      `;
 
       try {
-        const etaResponse = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${stopId}/${route}/1`);
-        const etaData = await etaResponse.json();
+         let etaUrl;
+        if (company === 'kmb') {
+            etaUrl = `https://data.etabus.gov.hk/v1/transport/kmb/eta/${stopId}/${route}/1`;
+        } else {
+            etaUrl = `https://rt.data.gov.hk/v1/transport/citybus-nwfb/eta/${company}/${stopId}/${route}`;
+        }
 
-        if (etaData.data.length === 0) {
-          etaSpan.innerHTML = "沒有班次資料";
+        const etaResponse = await fetch(etaUrl);
+		const etaData = await etaResponse.json();
+
+        if (!etaData.data || etaData.data.length === 0) {
+          etaDiv.innerHTML = '<div class="no-eta">暫無到站時間資訊</div>';
+          button.classList.remove('loading');
           return;
         }
 
         let now = new Date();
-        let output = "";
+        let upcomingBuses = [];
+        
         etaData.data.forEach(e => {
           if (e.eta && e.dir == type) {
             let etaTime = new Date(e.eta);
             let diffMin = Math.floor((etaTime - now) / 60000);
-			if(diffMin >= 0) {
-            	output += `<span>${diffMin} 分鐘</span>`;
-			}
+            if(diffMin >= 0 && diffMin <= 120) { // 只顯示未來2小時內的班次
+              upcomingBuses.push({
+                minutes: diffMin,
+                time: etaTime.toLocaleTimeString('zh-HK', { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  hour12: false 
+                }),
+                remark: e.rmk_tc || ''
+              });
+            }
           }
         });
 
-        etaSpan.innerHTML = output;
+        if (upcomingBuses.length === 0) {
+          etaDiv.innerHTML = '<div class="no-eta">未來2小時內沒有班次</div>';
+        } else {
+          // 按時間排序
+          upcomingBuses.sort((a, b) => a.minutes - b.minutes);
+          
+          let output = '<div class="eta-results">';
+          upcomingBuses.forEach((bus, index) => {
+            let timeClass = 'eta-time';
+            if (bus.minutes <= 3) timeClass += ' eta-imminent';
+            else if (bus.minutes <= 10) timeClass += ' eta-soon';
+            
+            output += `
+              <div class="eta-item ${index === 0 ? 'eta-next' : ''}">
+                <div class="${timeClass}">
+                  <span class="eta-minutes">${bus.minutes}</span>
+                  <span class="eta-unit">分鐘</span>
+                </div>
+                <div class="eta-details">
+                  <div class="eta-clock">${bus.time}</div>
+                  ${bus.remark ? `<div class="eta-remark">${bus.remark}</div>` : ''}
+                </div>
+              </div>
+            `;
+          });
+          output += '</div>';
+          etaDiv.innerHTML = output;
+        }
+
+        // 更新按鈕狀態
+        button.classList.remove('loading');
+        button.classList.add('checked');
+        button.innerHTML = '<span class="eta-btn-text">已更新</span><span class="eta-btn-icon">✅</span>';
+
+        // 5秒後恢復按鈕狀態
+        setTimeout(() => {
+          button.classList.remove('checked');
+          button.innerHTML = '<span class="eta-btn-text">到站時間</span><span class="eta-btn-icon">⏱️</span>';
+        }, 5000);
+
       } catch (error) {
-        etaSpan.innerHTML = "查詢失敗";
+        etaDiv.innerHTML = '<div class="eta-error">查詢失敗，請稍後再試</div>';
+        button.classList.remove('loading');
         console.error(error);
       }
     }
-  </script>
+
+    // 點擊Enter鍵查詢
+    document.getElementById('routeInput').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        getStops();
+      }
+    });
+
+// 在現有 script 中加入這幾行就夠了
+document.addEventListener('DOMContentLoaded', function() {
+    loadAutoInput();
+});
+
+function loadAutoInput() {
+	 const commonRoutes = { 
+		'kmb' : ['1' , '1A' , '2' , '2A' , '2B' , '2D' , '2E' , '2F' , '2P' , '2X' , '3B' , '3C' , '3D' , '3M' , '3S' , '3X' , '5' , '5A' , '5C' , '5D' , '5M' , '5P' , '5R' , '6' , '6C' , '6D' , '6E' , '6F' , '6P' , '6R' , '7' , '7B' , '7M' , '8' , '8A' , '8P' , '9' , '10' , '11' , '11B' , '11C' , '11D' , '11K' , '11X' , '12' , '12A' , '12P' , '13' , '13D' , '13M' , '13P' , '13X' , '14' , '14B' , '14D' , '14H' , '14S' , '14X' , '15' , '15A' , '15X' , '16' , '16M' , '16P' , '16X' , '17' , '18' , '19' , '21' , '23' , '23M' , '24' , '26' , '26M' , '26X' , '27' , '27X' , '28' , '28B' , '28S' , '29M' , '30' , '30X' , '31' , '31A' , '31B' , '31M' , '31P' , '32' , '32H' , '32M' , '32P' , '33' , '33A' , '33B' , '33R' , '33X' , '34' , '34M' , '35A' , '35X' , '36' , '36A' , '36B' , '36M' , '36R' , '36X' , '37' , '37M' , '37X' , '38' , '38A' , '38B' , '38P' , '38S' , '39A' , '39M' , '40' , '40A' , '40B' , '40E' , '40P' , '40X' , '41A' , '41M' , '41R' , '42' , '42A' , '42C' , '42M' , '43' , '43A' , '43B' , '43C' , '43D' , '43M' , '43P' , '43S' , '43X' , '44' , '44M' , '45' , '46' , '46P' , '46R' , '46S' , '46X' , '47A' , '47X' , '48P' , '48X' , '49' , '49A' , '49M' , '49P' , '49X' , '51' , '52P' , '52X' , '53' , '54' , '57M' , '58M' , '58P' , '58X' , '59A' , '59M' , '59X' , '60M' , '60X' , '61A' , '61M' , '61P' , '61X' , '62P' , '62X' , '63R' , '63X' , '64K' , '64P' , '64S' , '64X' , '65K' , '65X' , '66M' , '66X' , '67A' , '67M' , '67X' , '68' , '68A' , '68E' , '68F' , '68M' , '68R' , '68X' , '69' , '69C' , '69M' , '69P' , '69X' , '70K' , '70S' , '71A' , '71B' , '71K' , '71S' , '72' , '72A' , '72C' , '72K' , '72X' , '73' , '73A' , '73B' , '73D' , '73F' , '73K' , '73P' , '73S' , '73X' , '74' , '74A' , '74B' , '74C' , '74D' , '74E' , '74F' , '74K' , '74P' , '74R' , '74S' , '74X' , '75K' , '75P' , '75X' , '76' , '76K' , '76S' , '77K' , '78' , '78A' , '78B' , '78K' , '78S' , '79K' , '80' , '80A' , '80K' , '80P' , '80X' , '81' , '81C' , '81K' , '81X' , '82B' , '82C' , '82D' , '82K' , '82X' , '83A' , '83K' , '83P' , '83S' , '83X' , '84M' , '85' , '85A' , '85B' , '85K' , '85M' , '85P' , '85S' , '85X' , '86' , '86A' , '86C' , '86K' , '86S' , '87B' , '87C' , '87D' , '87E' , '87K' , '87P' , '87R' , '87S' , '88' , '88K' , '88X' , '89' , '89B' , '89C' , '89D' , '89P' , '89S' , '89X' , '90' , '91' , '91B' , '91M' , '91P' , '91S' , '92' , '92R' , '93A' , '93K' , '93M' , '93P' , '94' , '95' , '95M' , '96' , '96R' , '97' , '98' , '98A' , '98B' , '98C' , '98D' , '98E' , '98P' , '98R' , '98S' , '99' , '99R' , '101' , '101R' , '101X' , '102' , '102P' , '102R' , '103' , '104' , '106' , '106A' , '106P' , '107' , '107P' , '108' , '109' , '110' , '111' , '111P' , '112' , '113' , '115' , '115P' , '116' , '117' , '118' , '118P' , '118R' , '170' , '171' , '171A' , '171P' , '182' , '182X' , '203C' , '203E' , '203S' , '208' , '211' , '211A' , '213A' , '213B' , '213D' , '213E' , '213M' , '213S' , '213X' , '214' , '214P' , '215P' , '215R' , '215X' , '216M' , '219X' , '224R' , '224X' , '230R' , '230X' , '234A' , '234B' , '234C' , '234D' , '234P' , '234X' , '235' , '235M' , '238M' , '238P' , '238X' , '240X' , '241X' , '242X' , '243M' , '243P' , '248M' , '249M' , '249X' , '251A' , '251B' , '251C' , '251M' , '252' , '252B' , '252S' , '252X' , '258A' , '258D' , '258P' , '258S' , '258X' , '259B' , '259C' , '259D' , '259E' , '259R' , '259S' , '259X' , '260B' , '260C' , '260R' , '260X' , '261' , '261B' , '261P' , '261S' , '261X' , '263' , '263A' , '263B' , '263C' , '264R' , '265B' , '265M' , '265P' , '265S' , '267X' , '268' , '268A' , '268B' , '268C' , '268M' , '268P' , '268X' , '269B' , '269C' , '269D' , '269M' , '269P' , '269R' , '269S' , '269X' , '270' , '270A' , '270B' , '270C' , '270D' , '270E' , '270P' , '270R' , '270S' , '271' , '271A' , '271B' , '271P' , '271R' , '271S' , '271X' , '272A' , '272E' , '272K' , '272P' , '272S' , '272X' , '273' , '273A' , '273B' , '273C' , '273D' , '273P' , '273S' , '274' , '274P' , '274X' , '275R' , '275X' , '276' , '276A' , '276B' , '276C' , '276P' , '277A' , '277B' , '277E' , '277P' , '277X' , '278A' , '278K' , '278P' , '278X' , '279A' , '279B' , '279S' , '279X' , '280X' , '281' , '281A' , '281B' , '281E' , '281X' , '282' , '283' , '284' , '285' , '285A' , '286A' , '286C' , '286D' , '286P' , '286X' , '287' , '287D' , '287P' , '287X' , '288' , '288A' , '288B' , '288C' , '288D' , '289K' , '289R' , '290' , '290A' , '290E' , '290X' , '291P' , '292P' , '293S' , '296A' , '296C' , '296D' , '296M' , '296P' , '297' , '297P' , '298' , '298E' , '298F' , '298X' , '299X' , '302' , '302A' , '307' , '307A' , '307P' , '331' , '331S' , '373' , '600' , '601' , '601P' , '603' , '603A' , '603P' , '603S' , '606' , '606A' , '606X' , '613' , '613A' , '619' , '619P' , '619X' , '621' , '641' , '671' , '671X' , '673' , '673A' , '673P' , '678' , '680' , '680B' , '680P' , '680X' , '681' , '681P' , '690' , '690P' , '690S' , '848' , '868' , '869' , '872' , '872X' , '887' , '888' , '889' , '891' , '893' , '900' , '900X' , '904' , '905' , '905A' , '905P' , '907C' , '907D' , '914' , '914P' , '914X' , '917' , '918' , '934' , '934A' , '935' , '936' , '936A' , '945' , '948' , '948A' , '948B' , '948E' , '948P' , '948X' , '960' , '960A' , '960B' , '960C' , '960P' , '960S' , '960X' , '961' , '961P' , '961S' , '968' , '968A' , '968X' , '978' , '978A' , '978B' , '980A' , '980X' , '981P' , '982X' , '985' , '985A' , '985B' , 'A30' , 'A31' , 'A32' , 'A33' , 'A33X' , 'A34' , 'A36' , 'A37' , 'A38' , 'A41' , 'A41P' , 'A42' , 'A43' , 'A43P' , 'A46' , 'A47X' , 'B1' , 'B9' , 'B9A' , 'E31' , 'E32' , 'E32A' , 'E33' , 'E33P' , 'E36' , 'E36A' , 'E36C' , 'E36P' , 'E36S' , 'E37' , 'E37C' , 'E41' , 'E42' , 'E42C' , 'E42P' , 'E43' , 'HK1' , 'N3D' , 'N116' , 'N118' , 'N121' , 'N122' , 'N170' , 'N171' , 'N182' , 'N213' , 'N214' , 'N216' , 'N237' , 'N241' , 'N243' , 'N252' , 'N260' , 'N269' , 'N271' , 'N276' , 'N281' , 'N283' , 'N287' , 'N290' , 'N293' , 'N30' , 'N307' , 'N31' , 'N36' , 'N368' , 'N373' , 'N39' , 'N41X' , 'N42' , 'N42A' , 'N43' , 'N48' , 'N600' , 'N601' , 'N603' , 'N619' , 'N64' , 'N680' , 'N691' , 'N73' , 'N78' , 'N960' , 'NA30' , 'NA31' , 'NA32' , 'NA33' , 'NA36' , 'NA37' , 'NA40' , 'NA41' , 'NA43' , 'NA47' , 'NA52' , 'P960' , 'P968' , 'PB1' , 'PB1A' , 'PB1B' , 'PB2' , 'PB2A' , 'PB2B' , 'PB3' , 'PB3A' , 'PB3B' , 'PB4' , 'PB5' , 'PBD1' , 'PBD2' , 'PBS1' , 'PBS2' , 'PBW4' , 'PBW5' , 'PN10' , 'PN11' , 'R108' , 'R215' , 'R230' , 'R241' , 'R298' , 'R33' , 'R42' , 'R603' , 'R78' , 'R8' , 'R934' , 'R936' , 'R948' , 'S1' , 'S64' , 'S64C' , 'S64P' , 'S64X' , 'SP1' , 'SP10' , 'SP12' , 'SP3' , 'SP5A' , 'SP6' , 'SP7' , 'T270' , 'T277' , 'T74' , 'T80' , 'W2' , 'W3' , 'W4' , 'X1' , 'X33' , 'X36' , 'X40' , 'X42C' , 'X42P' , 'X43' , 'X47' , 'X6C' , 'X89D'],
+ 'CTB' : ['1' , '10' , '101' , '101R' , '101X' , '102' , '102P' , '102R' , '103' , '104' , '104R' , '106' , '106A' , '106P' , '107' , '107P' , '109' , '11' , '110' , '111' , '111P' , '112' , '113' , '115' , '115P' , '116' , '117' , '118' , '118P' , '118R' , '12' , '12A' , '12M' , '13' , '14' , '15' , '15B' , '15C' , '170' , '171' , '171A' , '171P' , '173R' , '18' , '182' , '182X' , '18P' , '18X' , '19P' , '1M' , '1P' , '2' , '20' , '20A' , '20R' , '22' , '22D' , '22M' , '22R' , '22X' , '23' , '23B' , '23X' , '25' , '25A' , '26' , '260' , '260X' , '27' , '2A' , '2X' , '302' , '302A' , '307' , '307A' , '307P' , '30X' , '314' , '33X' , '347' , '37A' , '37B' , '37X' , '38' , '382' , '388' , '389' , '3A' , '4' , '40' , '40M' , '40P' , '41A' , '42' , '42C' , '43M' , '43R' , '47P' , '48' , '49X' , '4X' , '50' , '50M' , '50R' , '511' , '55' , '56' , '56A' , '580' , '581' , '582' , '586' , '587' , '589' , '592' , '595' , '5B' , '5X' , '6' , '601' , '601P' , '606' , '606A' , '606X' , '608' , '608P' , '619' , '619P' , '619X' , '61R' , '621' , '629' , '629M' , '63' , '641' , '65' , '66' , '671' , '671X' , '678' , '679' , '680' , '680B' , '680P' , '680X' , '681' , '681P' , '682' , '682A' , '682B' , '682P' , '690' , '690P' , '690S' , '694' , '694S' , '6A' , '6X' , '7' , '70' , '701' , '701A' , '701S' , '702' , '702A' , '702B' , '702S' , '70P' , '71' , '71P' , '72' , '720' , '720A' , '720P' , '720X' , '722' , '72A' , '73' , '73P' , '75' , '76' , '77' , '77A' , '77X' , '78' , '780' , '780P' , '788' , '789' , '78C' , '78P' , '78X' , '79' , '790' , '792M' , '793' , '795' , '795X' , '796P' , '796R' , '796S' , '796X' , '797' , '798' , '798A' , '798P' , '798X' , '79P' , '79X' , '8' , '81' , '81A' , '82' , '82S' , '82X' , '85' , '85A' , '85P' , '88R' , '88X' , '8H' , '8P' , '8X' , '9' , '90' , '904' , '905' , '905A' , '905P' , '907C' , '907D' , '90B' , '90C' , '91' , '914' , '914P' , '914X' , '91A' , '93' , '930' , '930A' , '930B' , '930X' , '933' , '93A' , '93C' , '948' , '948A' , '948B' , '948E' , '948P' , '948X' , '94A' , '950' , '952' , '952C' , '952P' , '955' , '95C' , '95P' , '962' , '962A' , '962C' , '962G' , '962P' , '962X' , '967' , '967X' , '969' , '969B' , '969C' , '969N' , '969P' , '969X' , '97' , '970' , '970X' , '971' , '971R' , '973' , '976' , '976A' , '976S' , '979' , '98' , '980A' , '980X' , '981P' , '982C' , '982X' , '985' , '985A' , '985B' , '986' , '987' , '989' , '99' , '99X' , '9C' , 'A10' , 'A11' , 'A12' , 'A17' , 'A20' , 'A21' , 'A22' , 'A23' , 'A25' , 'A25S' , 'A26' , 'A28' , 'A28X' , 'A29' , 'B3' , 'B3A' , 'B3M' , 'B3X' , 'B5' , 'B7' , 'B7X' , 'B8' , 'E11' , 'E11A' , 'E11B' , 'E11S' , 'E21' , 'E21A' , 'E21B' , 'E21C' , 'E21D' , 'E21X' , 'E22' , 'E22A' , 'E22C' , 'E22P' , 'E22S' , 'E22X' , 'E23' , 'E23A' , 'H1' , 'H1S' , 'H2' , 'H20' , 'H2K' , 'H3' , 'H4' , 'N11' , 'N118' , 'N121' , 'N122' , 'N170' , 'N171' , 'N182' , 'N20' , 'N21' , 'N21A' , 'N23' , 'N26' , 'N29' , 'N307' , 'N50' , 'N619' , 'N680' , 'N691' , 'N72' , 'N796' , 'N8' , 'N8P' , 'N8X' , 'N90' , 'N930' , 'N952' , 'N962' , 'N969' , 'NA10' , 'NA11' , 'NA12' , 'NA20' , 'NA21' , 'NA29' , 'NB3' , 'NP1' , 'NP2' , 'R11' , 'R22' , 'R307' , 'R38' , 'R680' , 'R796' , 'R8' , 'R930' , 'R948' , 'R950' , 'R962' , 'R969' , 'S1' , 'S52' , 'S52A' , 'S52P' , 'S56' , 'SP10' , 'SP11' , 'SP12' , 'SP2' , 'SP5B' , 'SP9' , 'X1' , 'X15' , 'X55' , 'X8' , 'X9' , 'X962' , 'X970']
+};
+    
+		console.log(company, commonRoutes[company]);
+    // 获取 datalist 元素
+let datalist = document.getElementById('busRoutes');
+
+// 如果存在 datalist，则清空其中选项
+if (datalist) {
+    // 清空现有的选项
+    while (datalist.firstChild) {
+        datalist.removeChild(datalist.firstChild);
+    }
+} else {
+    // 否则，创建新的 datalist
+    datalist = document.createElement('datalist');
+    datalist.id = 'busRoutes';
+    document.body.appendChild(datalist);
+}
+
+// 加入選項
+commonRoutes[company].forEach(route => {
+    let option = document.createElement('option');
+    option.value = route;
+    datalist.appendChild(option);
+});
+
+// 綁定到輸入框
+const routeInput = document.getElementById('routeInput');
+routeInput.setAttribute('list', 'busRoutes');
+}
+
+let cachedUserLat = null;
+let cachedUserLng = null;
+
+// 頁面載入時就開始定位
+if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition((pos) => {
+        cachedUserLat = pos.coords.latitude;
+        cachedUserLng = pos.coords.longitude;
+        console.log('✅ 已預先載入位置:', cachedUserLat, cachedUserLng);
+    }, (error) => {
+        console.log('預先定位失敗，將在查詢時重新嘗試');
+    });
+}
+</script>
 
 <style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
 body {
-	margin: 0;
-	padding: 0;
-	font-size: 20px;  
-	font-family: "arial", "Microsoft JhengHei", "微軟正黑體", sans-serif;
-}	
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "微軟正黑體", sans-serif;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4edf5 100%);
+  min-height: 100vh;
+  color: #333;
+  line-height: 1.6;
+}
+
 .main {
-	display: block;
-	padding: 10px;
-	margin: auto;
-	box-sizing: border-box;
-	width: 640px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 20px;
+  background: white;
+  min-height: 100vh;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.1);
 }
-.main h3 {
-	display: block;
-	margin: 10px auto;
-	padding: 10px;
-	background-color: #eee;
+
+/* 頂部標題 */
+.header {
+  text-align: left;
+  padding: 10px 0 20px;
+  background: linear-gradient(135deg, #41009b 0%, #2a0066 100%);
+  margin: -20px -20px 30px;
+  border-radius: 0 0 20px 20px;
+  color: white;
+  position: relative;
+  overflow: hidden;
 }
-.filter {
-	display: flex;
-	height: 80px;
-	width: 100%;
-    align-items: center;
+.top_icon {
+    display: block;
+    float: left;
+    border-radius: 100%;
+    overflow: hidden;
+    width: 20%;
+    margin: 0 8%;
+    position: relative;
+    z-index: 2;
 }
-.filter label {
-	flex: 1;
+.top_icon img {
+  display: block;
+  width: 100%;
 }
-button {
-    background-color: #41009b;
-	color: #fff;
-	cursor: pointer;
-	border: none;
+
+.header::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 1px, transparent 1px);
+  background-size: 20px 20px;
+  animation: moveBg 20s linear infinite;
 }
-.filter button,
-.filter select {
-	width: 20%;
-	height: 100%;
-	box-sizing: border-box;
-	cursor: pointer;
-	font-size: 30px;
-	text-align: center;
+
+@keyframes moveBg {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(20px, 20px) rotate(360deg); }
 }
-.filter input {
-	width: 30%;
-	height: 100%;
-	box-sizing: border-box;
-	font-size: 35px;
-	text-align: center;
+
+.kmb-logo {
+  font-size: 24px;
+  font-weight: bold;
+  background: rgba(255, 255, 255, 0.2);
+  width: 60px;
+  height: 60px;
+  line-height: 60px;
+  border-radius: 50%;
+  margin: 0 auto 15px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
 }
-.result {
-	display: block;
+
+.header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  letter-spacing: 1px;
 }
-.result .item {
-	display: block;
-	border-top: 1px solid #aaa;
-	padding: 5px 10px;
-	box-sizing: border-box;
+
+.subtitle {
+  font-size: 14px;
+  opacity: 0.9;
+  font-weight: 300;
 }
-.result .item div {
-	display: flex;
-    justify-content: space-between;
-    align-items: center;
-	padding: 10px 0;
+
+/* 搜尋區域 */
+.search-container {
+  margin-bottom: 30px;
 }
-.result .item p ,
-.result .item span {
-	display: block;
-	margin: 0;
-	padding: 0;
-    color: #E91E63;
-    font-size: 25px;
-    font-weight: bold;
+
+.search-box {
+  display: block;
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 25px rgba(65, 0, 155, 0.1);
+  border: 1px solid rgba(65, 0, 155, 0.1);
 }
-.result .item button {
-	padding: 5px 20px;
-	font-size: 20px;
+.search-box .input {
+  display: flex;
+  gap: 15px;
+}
+
+.input-group {
+  margin-bottom: 20px;
+  width: 50%;
+  box-sizing: border-box;
+}
+
+.input-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #41009b;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.input-wrapper, .select-wrapper {
+  position: relative;
+}
+
+.input-wrapper input, .select-wrapper select {
+  width: 100%;
+  padding: 16px 50px 16px 20px;
+  font-size: 20px;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  background: #f8f9fa;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  color: #333;
+}
+
+.input-wrapper input:focus, .select-wrapper select:focus {
+  outline: none;
+  border-color: #41009b;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(65, 0, 155, 0.1);
+}
+
+.input-icon, .select-icon {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  color: #666;
+}
+
+.select-icon {
+  pointer-events: none;
+}
+
+.search-btn {
+  width: 100%;
+  padding: 18px;
+  background: linear-gradient(135deg, #41009b 0%, #2a0066 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.3s ease;
+  margin-top: 10px;
+}
+
+.search-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(65, 0, 155, 0.3);
+}
+
+.search-btn:active {
+  transform: translateY(0);
+}
+
+.btn-icon {
+  font-size: 20px;
+}
+
+/* 結果區域 */
+.result-container {
+  min-height: 200px;
+}
+
+.empty-state, .loading-state, .error-state {
+  text-align: center;
+  padding: 50px 20px;
+  color: #666;
+}
+
+.empty-icon, .error-icon {
+  font-size: 50px;
+  margin-bottom: 20px;
+  opacity: 0.5;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #41009b;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 路線標題 */
+.route-header {
+  background: linear-gradient(135deg, #f8f5ff 0%, #eef2ff 100%);
+  padding: 20px;
+  border-radius: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid rgba(65, 0, 155, 0.1);
+}
+
+.route-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.route-number {
+  font-size: 32px;
+  font-weight: 800;
+  color: #41009b;
+  background: white;
+  min-width: 70px;
+  height: 70px;
+  line-height: 70px;
+  text-align: center;
+  border-radius: 50%;
+  box-shadow: 0 4px 15px rgba(65, 0, 155, 0.2);
+  border: 3px solid #41009b;
+    padding: 0 10px;
+    box-sizing: border-box;
+}
+
+.route-direction {
+  font-size: 16px;
+  font-weight: 600;
+  color: #41009b;
+  background: rgba(65, 0, 155, 0.1);
+  padding: 6px 15px;
+  border-radius: 20px;
+}
+
+.route-stats {
+  font-size: 14px;
+  color: #666;
+  background: white;
+  padding: 8px 15px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+/* 站點列表 */
+.stops-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.stop-item {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+  border: 1px solid #eee;
+  transition: transform 0.3s ease;
+}
+
+.stop-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.stop-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.stop-sequence {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #41009b 0%, #2a0066 100%);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.stop-info {
+  flex: 1;
+}
+
+.stop-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.stop-id {
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+  background: #f5f5f5;
+  padding: 2px 8px;
+  border-radius: 10px;
+  display: inline-block;
+}
+
+.eta-btn {
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #00c853 0%, #00a844 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.eta-btn:hover:not(.loading):not(.checked) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 200, 83, 0.3);
+}
+
+.eta-btn.loading {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.eta-btn.checked {
+  background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+}
+
+/* ETA 顯示區域 */
+.eta-display {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+
+.eta-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #666;
+  font-size: 14px;
+}
+
+.loading-dots span {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #41009b;
+  margin: 0 2px;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1.0); }
+}
+
+.eta-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.eta-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 12px;
+  border-left: 4px solid #ddd;
+}
+
+.eta-item.eta-next {
+  background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+  border-left-color: #00c853;
+}
+
+.eta-time {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+  padding: 8px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.eta-imminent .eta-minutes {
+  color: #f44336;
+  animation: pulse 2s infinite;
+}
+
+.eta-soon .eta-minutes {
+  color: #ff9800;
+}
+
+.eta-minutes {
+  font-size: 28px;
+  font-weight: 800;
+  color: #41009b;
+  line-height: 1;
+}
+
+.eta-unit {
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.eta-details {
+  flex: 1;
+}
+
+.eta-clock {
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.eta-remark {
+  font-size: 12px;
+  color: #666;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+.no-eta, .eta-error {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  background: #f5f5f5;
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+/* 重試按鈕 */
+.retry-btn {
+  margin-top: 20px;
+  padding: 12px 30px;
+  background: #41009b;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.retry-btn:hover {
+  background: #2a0066;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(65, 0, 155, 0.3);
+}
+
+/* 頁腳 */
+.footer {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+  text-align: center;
+  font-size: 12px;
+  color: #666;
+}
+
+.update-time {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #999;
+}
+
+/* 響應式設計 */
+@media (max-width: 480px) {
+  .main {
+    padding: 15px;
+  }
+  
+  .header {
+    margin: -15px -15px 20px;
+    padding: 15px 0 25px;
+  }
+  
+  .header h1 {
+    font-size: 24px;
+  }
+  
+  .search-box {
+    padding: 15px;
+  }
+  
+  .input-wrapper input, .select-wrapper select {
+    font-size: 18px;
+    padding: 14px 45px 14px 15px;
+  }
+  
+  .route-header {
+    gap: 15px;
+    text-align: center;
+  }
+  
+  .route-info {
+    gap: 10px;
+  }
+  
+  .stop-header {
+    flex-wrap: wrap;
+  }
+  
+  .eta-btn {
+    width: 100%;
+    justify-content: center;
+    margin-top: 10px;
+  }
+  
+  .eta-item {
+    text-align: center;
+    gap: 10px;
+  }
+  
+  .eta-time {
+    width: 50%;
+  }
 }
 </style>  
 </body>
